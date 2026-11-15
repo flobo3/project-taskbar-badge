@@ -1,0 +1,35 @@
+<idea-plugin>
+    <id>com.github.flobo3.projectTaskbarBadge</id>
+    <name>Project Taskbar Badge</name>
+    <version>1.1.0</version>
+    <vendor url="https://github.com/flobo3">Flop</vendor>
+    <description><![CDATA[
+        Displays each open project's icon as a Windows taskbar overlay badge on its IDE window button, making it easy to distinguish multiple open projects at a glance.<br/><br/>
+        <b>Features:</b>
+        <ul>
+            <li>Uses the project's custom icon (<code>.idea/icon_dark.png</code>, <code>.idea/icon.png</code>, or <code>.idea/icon.svg</code>).</li>
+            <li>Optional fallback to the generated project letter badge in the project's header color when no custom icon is configured.</li>
+            <li>Configurable badge size (16-32 px) and toggles in <b>Settings | Tools | Project Taskbar Badge</b> with instant apply.</li>
+        </ul>
+    ]]></description>
+    <change-notes><![CDATA[
+        <b>1.1.0</b>
+        <ul>
+            <li>Added Settings UI under <b>Tools | Project Taskbar Badge</b>.</li>
+            <li>Added project-colored letter badge fallback for projects without a custom icon (can be toggled off).</li>
+            <li>Added configurable badge size (default 24x24 px) and instant refresh on settings or project color changes.</li>
+        </ul>
+    ]]></change-notes>
+
+    <depends>com.intellij.modules.platform</depends>
+    <idea-version since-build="251"/>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="com.github.flobo3.taskbarbadge.TaskbarBadgeStartupActivity"/>
+        <applicationConfigurable
+                parentId="tools"
+                instance="com.github.flobo3.taskbarbadge.TaskbarBadgeConfigurable"
+                id="com.github.flobo3.projectTaskbarBadge.settings"
+                displayName="Project Taskbar Badge"/>
+    </extensions>
+</idea-plugin>
