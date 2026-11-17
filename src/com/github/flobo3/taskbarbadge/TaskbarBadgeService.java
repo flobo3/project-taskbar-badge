@@ -100,15 +100,12 @@ public final class TaskbarBadgeService {
         }
 
         boolean hasCustom = hasCustomIconFile(basePath);
+        if (!hasCustom && !settings.isFallbackToProjectLetter()) {
+            return null;
+        }
+
         try {
             RecentProjectsManagerBase manager = RecentProjectsManagerBase.getInstanceEx();
-            if (manager.hasCustomIcon(project)) {
-                hasCustom = true;
-            }
-            if (!hasCustom && !settings.isFallbackToProjectLetter()) {
-                return null;
-            }
-
             Path path = Paths.get(basePath);
             Icon projectIcon = manager.getProjectIcon(path, true, badgeSize, project.getName());
             if (projectIcon != null) {
