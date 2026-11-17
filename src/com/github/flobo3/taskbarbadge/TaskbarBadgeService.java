@@ -20,8 +20,6 @@ import java.awt.RenderingHints;
 import java.awt.Taskbar;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -106,8 +104,10 @@ public final class TaskbarBadgeService {
 
         try {
             RecentProjectsManagerBase manager = RecentProjectsManagerBase.getInstanceEx();
-            Path path = Paths.get(basePath);
-            Icon projectIcon = manager.getProjectIcon(path, true, badgeSize, project.getName());
+            // Use the String overload: getProjectIcon(Path, …) only exists since 2025.3, while the
+            // String one is present in every supported release (2025.1+). Calling the Path variant
+            // broke the plugin on 2025.1/2025.2 with NoSuchMethodError (Plugin Verifier: critical).
+            Icon projectIcon = manager.getProjectIcon(basePath, true, badgeSize, project.getName());
             if (projectIcon != null) {
                 BufferedImage rendered = renderSwingIcon(projectIcon, badgeSize);
                 return placeInBottomRightCorner(rendered, CANVAS_SIZE, badgeSize);

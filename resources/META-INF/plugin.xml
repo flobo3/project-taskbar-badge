@@ -16,6 +16,7 @@
         <b>1.1.1</b>
         <ul>
             <li>Removed usage of the internal IntelliJ Platform API (<code>RecentProjectsManagerBase.hasCustomIcon</code>) reported by the Plugin Verifier; custom project icons are now detected directly from <code>.idea/icon*.png|svg</code>.</li>
+            <li>Fixed a <code>NoSuchMethodError</code> on IntelliJ Platform 2025.1 and 2025.2: the project icon is now taken through <code>getProjectIcon(String, …)</code>, which exists in all supported releases, instead of the <code>Path</code> overload that only appeared in 2025.3.</li>
         </ul>
         <b>1.1.0</b>
         <ul>
