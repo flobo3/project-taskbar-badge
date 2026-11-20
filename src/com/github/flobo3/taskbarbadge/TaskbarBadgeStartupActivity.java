@@ -32,26 +32,45 @@ public final class TaskbarBadgeStartupActivity implements StartupActivity.DumbAw
 
             service.applyForProject(project, true);
 
-            Runnable forceRefresh = () -> ApplicationManager.getApplication()
-                    .invokeLater(() -> service.applyForProject(project, true));
+            Runnable reapply = () -> ApplicationManager.getApplication()
+                    .invokeLater(() -> service.reapplyCachedBadge(project));
 
             WindowAdapter windowListener = new WindowAdapter() {
                 @Override
                 public void windowOpened(WindowEvent e) {
-                    forceRefresh.run();
+                    reapply.run();
                 }
 
                 @Override
                 public void windowDeiconified(WindowEvent e) {
-                    forceRefresh.run();
+                    reapply.run();
+                }
+
+                @Override
+                public void windowActivated(WindowEvent e) {
+                    reapply.run();
+                }
+
+                @Override
+                public void windowGainedFocus(WindowEvent e) {
+                    reapply.run();
+                }
+
+                @Override
+                public void windowStateChanged(WindowEvent e) {
+                    reapply.run();
                 }
             };
 
             frame.addWindowListener(windowListener);
+            frame.addWindowFocusListener(windowListener);
+            frame.addWindowStateListener(windowListener);
 
             Disposer.register(project, () -> {
                 service.clearCache(project);
                 frame.removeWindowListener(windowListener);
+                frame.removeWindowFocusListener(windowListener);
+                frame.removeWindowStateListener(windowListener);
             });
         });
     }

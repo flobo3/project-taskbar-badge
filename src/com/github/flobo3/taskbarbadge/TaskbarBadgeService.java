@@ -16,6 +16,7 @@ import javax.imageio.ImageIO;
 import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
+import javax.swing.Timer;
 import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
 import java.awt.Image;
@@ -31,6 +32,7 @@ public final class TaskbarBadgeService {
     private static final Logger LOG = Logger.getInstance(TaskbarBadgeService.class);
     private static final int CANVAS_SIZE = 32;
     private final Map<Project, String> myAppliedKeys = new ConcurrentHashMap<>();
+    private final Map<Project, Image> myCachedBadges = new ConcurrentHashMap<>();
 
     public static TaskbarBadgeService getInstance() {
         return ApplicationManager.getApplication().getService(TaskbarBadgeService.class);
@@ -46,6 +48,7 @@ public final class TaskbarBadgeService {
             return;
         }
         myAppliedKeys.clear();
+        myCachedBadges.clear();
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Project project : ProjectManager.getInstance().getOpenProjects()) {
                 if (!project.isDisposed()) {
@@ -57,6 +60,31 @@ public final class TaskbarBadgeService {
 
     public void clearCache(@NotNull Project project) {
         myAppliedKeys.remove(project);
+        myCachedBadges.remove(project);
+    }
+
+    public void reapplyCachedBadge(@NotNull Project project) {
+        if (project.isDisposed() || !isOverlaySupported()) {
+            return;
+        }
+        TaskbarBadgeSettings settings = TaskbarBadgeSettings.getInstance();
+        if (!settings.isEnabled()) {
+            return;
+        }
+        Image cached = myCachedBadges.get(project);
+        if (cached == null) {
+            applyForProject(project, true);
+            return;
+        }
+        JFrame frame = WindowManager.getInstance().getFrame(project);
+        if (frame == null || !frame.isDisplayable()) {
+            return;
+        }
+        try {
+            Taskbar.getTaskbar().setWindowIconBadge(frame, cached);
+        } catch (Throwable t) {
+            LOG.warn("Failed to reapply taskbar overlay icon for project: " + project.getName(), t);
+        }
     }
 
     public void applyForProject(@NotNull Project project) {
@@ -94,6 +122,11 @@ public final class TaskbarBadgeService {
         try {
             Taskbar.getTaskbar().setWindowIconBadge(frame, badge);
             myAppliedKeys.put(project, key);
+            if (badge != null) {
+                myCachedBadges.put(project, badge);
+            } else {
+                myCachedBadges.remove(project);
+            }
         } catch (Throwable t) {
             LOG.warn("Failed to update taskbar overlay icon for project: " + project.getName(), t);
         }
@@ -135,23 +168,23 @@ public final class TaskbarBadgeService {
                 return;
             }
             if (projectIcon instanceof DeferredIcon deferred && !deferred.isDone()) {
-                JComponent repaintProxy = new JComponent() {
-                    private boolean myScheduled;
-
-                    @Override
-                    public void repaint(long tm, int x, int y, int width, int height) {
-                        if (!myScheduled && !project.isDisposed()) {
-                            myScheduled = true;
-                            ApplicationManager.getApplication().invokeLater(() -> applyForProject(project, true));
-                        }
+                JComponent targetComponent = frame.getRootPane();
+                renderSwingIcon(projectIcon, badgeSize, targetComponent);
+                final int[] attempts = {0};
+                Timer pollTimer = new Timer(100, null);
+                pollTimer.addActionListener(e -> {
+                    attempts[0]++;
+                    if (project.isDisposed() || !frame.isDisplayable() || attempts[0] > 30) {
+                        pollTimer.stop();
+                        return;
                     }
-
-                    @Override
-                    public void repaint() {
-                        repaint(0, 0, 0, 0, 0);
+                    if (deferred.isDone()) {
+                        pollTimer.stop();
+                        applySwingIcon(project, frame, key, projectIcon, badgeSize);
                     }
-                };
-                renderSwingIcon(projectIcon, badgeSize, repaintProxy);
+                });
+                pollTimer.setRepeats(true);
+                pollTimer.start();
                 return;
             }
             applySwingIcon(project, frame, key, projectIcon, badgeSize);
