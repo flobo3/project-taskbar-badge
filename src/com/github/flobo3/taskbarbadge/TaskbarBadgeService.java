@@ -6,12 +6,15 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.wm.WindowManager;
+import com.intellij.ui.DeferredIcon;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.imageio.ImageIO;
 import javax.swing.Icon;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
@@ -76,7 +79,18 @@ public final class TaskbarBadgeService {
             return;
         }
 
-        Image badge = settings.isEnabled() ? resolveBadgeImage(project, settings) : null;
+        if (!settings.isEnabled()) {
+            setBadge(project, frame, key, null);
+            return;
+        }
+
+        resolveAndApplyBadge(project, frame, key, settings);
+    }
+
+    private void setBadge(@NotNull Project project, @NotNull JFrame frame, @NotNull String key, @Nullable Image badge) {
+        if (project.isDisposed() || !frame.isDisplayable()) {
+            return;
+        }
         try {
             Taskbar.getTaskbar().setWindowIconBadge(frame, badge);
             myAppliedKeys.put(project, key);
@@ -85,21 +99,29 @@ public final class TaskbarBadgeService {
         }
     }
 
-    private static @Nullable Image resolveBadgeImage(@NotNull Project project, @NotNull TaskbarBadgeSettings settings) {
+    private void resolveAndApplyBadge(
+            @NotNull Project project,
+            @NotNull JFrame frame,
+            @NotNull String key,
+            @NotNull TaskbarBadgeSettings settings
+    ) {
         int badgeSize = settings.getBadgeSize();
         String basePath = project.getBasePath();
         if (basePath == null) {
-            return null;
+            setBadge(project, frame, key, null);
+            return;
         }
 
-        Image pngIcon = loadCustomPng(basePath);
-        if (pngIcon != null) {
-            return placeInBottomRightCorner(pngIcon, CANVAS_SIZE, badgeSize);
+        Image customIcon = loadCustomIcon(basePath, badgeSize);
+        if (customIcon != null) {
+            setBadge(project, frame, key, placeInBottomRightCorner(customIcon, CANVAS_SIZE, badgeSize));
+            return;
         }
 
         boolean hasCustom = hasCustomIconFile(basePath);
         if (!hasCustom && !settings.isFallbackToProjectLetter()) {
-            return null;
+            setBadge(project, frame, key, null);
+            return;
         }
 
         try {
@@ -108,15 +130,64 @@ public final class TaskbarBadgeService {
             // String one is present in every supported release (2025.1+). Calling the Path variant
             // broke the plugin on 2025.1/2025.2 with NoSuchMethodError (Plugin Verifier: critical).
             Icon projectIcon = manager.getProjectIcon(basePath, true, badgeSize, project.getName());
-            if (projectIcon != null) {
-                BufferedImage rendered = renderSwingIcon(projectIcon, badgeSize);
-                return placeInBottomRightCorner(rendered, CANVAS_SIZE, badgeSize);
+            if (projectIcon == null) {
+                setBadge(project, frame, key, null);
+                return;
             }
+            if (projectIcon instanceof DeferredIcon deferred && !deferred.isDone()) {
+                JComponent repaintProxy = new JComponent() {
+                    private boolean myScheduled;
+
+                    @Override
+                    public void repaint(long tm, int x, int y, int width, int height) {
+                        if (!myScheduled && !project.isDisposed()) {
+                            myScheduled = true;
+                            ApplicationManager.getApplication().invokeLater(() -> applyForProject(project, true));
+                        }
+                    }
+
+                    @Override
+                    public void repaint() {
+                        repaint(0, 0, 0, 0, 0);
+                    }
+                };
+                renderSwingIcon(projectIcon, badgeSize, repaintProxy);
+                return;
+            }
+            applySwingIcon(project, frame, key, projectIcon, badgeSize);
         } catch (Throwable t) {
             LOG.warn("Failed to resolve project icon via RecentProjectsManagerBase", t);
         }
+    }
 
-        return null;
+    private void applySwingIcon(
+            @NotNull Project project,
+            @NotNull JFrame frame,
+            @NotNull String key,
+            @Nullable Icon icon,
+            int badgeSize
+    ) {
+        if (project.isDisposed() || !frame.isDisplayable() || icon == null) {
+            return;
+        }
+        BufferedImage rendered = renderSwingIcon(icon, badgeSize, null);
+        if (!hasVisiblePixels(rendered)) {
+            return;
+        }
+        setBadge(project, frame, key, placeInBottomRightCorner(rendered, CANVAS_SIZE, badgeSize));
+    }
+
+    private static boolean hasVisiblePixels(@NotNull BufferedImage img) {
+        int w = img.getWidth();
+        int h = img.getHeight();
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((img.getRGB(x, y) >>> 24) != 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean hasCustomIconFile(@NotNull String basePath) {
@@ -129,32 +200,43 @@ public final class TaskbarBadgeService {
         return false;
     }
 
-    private static @Nullable Image loadCustomPng(@NotNull String basePath) {
-        String[] candidates = {".idea/icon_dark.png", ".idea/icon.png"};
+    private static @Nullable Image loadCustomIcon(@NotNull String basePath, int targetSize) {
+        String[] candidates = {".idea/icon_dark.png", ".idea/icon.png", ".idea/icon_dark.svg", ".idea/icon.svg"};
         for (String rel : candidates) {
             File file = new File(basePath, rel);
-            if (file.isFile()) {
-                try {
+            if (!file.isFile()) {
+                continue;
+            }
+            try {
+                if (rel.endsWith(".svg")) {
+                    Icon icon = IconLoader.findIcon(file.toURI().toURL(), false);
+                    if (icon != null) {
+                        BufferedImage rendered = renderSwingIcon(icon, targetSize, null);
+                        if (hasVisiblePixels(rendered)) {
+                            return rendered;
+                        }
+                    }
+                } else {
                     Image img = ImageIO.read(file);
                     if (img != null) {
                         return img;
                     }
-                } catch (Throwable t) {
-                    LOG.warn("Failed to read project PNG icon: " + file, t);
                 }
+            } catch (Throwable t) {
+                LOG.warn("Failed to read project icon: " + file, t);
             }
         }
         return null;
     }
 
-    private static @NotNull BufferedImage renderSwingIcon(@NotNull Icon icon, int targetSize) {
+    private static @NotNull BufferedImage renderSwingIcon(@NotNull Icon icon, int targetSize, @Nullable JComponent component) {
         int w = Math.max(1, icon.getIconWidth());
         int h = Math.max(1, icon.getIconHeight());
         BufferedImage raw = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = raw.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        icon.paintIcon(null, g, 0, 0);
+        icon.paintIcon(component, g, 0, 0);
         g.dispose();
 
         if (w == targetSize && h == targetSize) {

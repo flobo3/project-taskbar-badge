@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.github.flobo3.projectTaskbarBadge</id>
     <name>Project Taskbar Badge</name>
-    <version>1.1.1</version>
+    <version>1.1.2</version>
     <vendor url="https://github.com/flobo3">Flop</vendor>
     <description><![CDATA[
         Displays each open project's icon as a Windows taskbar overlay badge on its IDE window button, making it easy to distinguish multiple open projects at a glance.<br/><br/>
@@ -13,6 +13,10 @@
         </ul>
     ]]></description>
     <change-notes><![CDATA[
+        <b>1.1.2</b>
+        <ul>
+            <li>Fixed a black square badge caused by rendering an unevaluated <code>DeferredIcon</code> placeholder on startup or size change; deferred icons are now evaluated off the EDT before updating the taskbar overlay, and fully transparent images are skipped.</li>
+        </ul>
         <b>1.1.1</b>
         <ul>
             <li>Removed usage of the internal IntelliJ Platform API (<code>RecentProjectsManagerBase.hasCustomIcon</code>) reported by the Plugin Verifier; custom project icons are now detected directly from <code>.idea/icon*.png|svg</code>.</li>
