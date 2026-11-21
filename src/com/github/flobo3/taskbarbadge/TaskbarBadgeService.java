@@ -8,7 +8,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.wm.WindowManager;
-import com.intellij.ui.DeferredIcon;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -167,47 +166,31 @@ public final class TaskbarBadgeService {
                 setBadge(project, frame, key, null);
                 return;
             }
-            if (projectIcon instanceof DeferredIcon deferred && !deferred.isDone()) {
-                JComponent targetComponent = frame.getRootPane();
-                renderSwingIcon(projectIcon, badgeSize, targetComponent);
-                final int[] attempts = {0};
-                Timer pollTimer = new Timer(100, null);
-                pollTimer.addActionListener(e -> {
-                    attempts[0]++;
-                    if (project.isDisposed() || !frame.isDisplayable() || attempts[0] > 30) {
-                        pollTimer.stop();
-                        return;
-                    }
-                    if (deferred.isDone()) {
-                        pollTimer.stop();
-                        applySwingIcon(project, frame, key, projectIcon, badgeSize);
-                    }
-                });
-                pollTimer.setRepeats(true);
-                pollTimer.start();
+            JComponent targetComponent = frame.getRootPane();
+            BufferedImage initial = renderSwingIcon(projectIcon, badgeSize, targetComponent);
+            if (hasVisiblePixels(initial)) {
+                setBadge(project, frame, key, placeInBottomRightCorner(initial, CANVAS_SIZE, badgeSize));
                 return;
             }
-            applySwingIcon(project, frame, key, projectIcon, badgeSize);
+            final int[] attempts = {0};
+            Timer pollTimer = new Timer(100, null);
+            pollTimer.addActionListener(e -> {
+                attempts[0]++;
+                if (project.isDisposed() || !frame.isDisplayable() || attempts[0] > 30) {
+                    pollTimer.stop();
+                    return;
+                }
+                BufferedImage rendered = renderSwingIcon(projectIcon, badgeSize, targetComponent);
+                if (hasVisiblePixels(rendered)) {
+                    pollTimer.stop();
+                    setBadge(project, frame, key, placeInBottomRightCorner(rendered, CANVAS_SIZE, badgeSize));
+                }
+            });
+            pollTimer.setRepeats(true);
+            pollTimer.start();
         } catch (Throwable t) {
             LOG.warn("Failed to resolve project icon via RecentProjectsManagerBase", t);
         }
-    }
-
-    private void applySwingIcon(
-            @NotNull Project project,
-            @NotNull JFrame frame,
-            @NotNull String key,
-            @Nullable Icon icon,
-            int badgeSize
-    ) {
-        if (project.isDisposed() || !frame.isDisplayable() || icon == null) {
-            return;
-        }
-        BufferedImage rendered = renderSwingIcon(icon, badgeSize, null);
-        if (!hasVisiblePixels(rendered)) {
-            return;
-        }
-        setBadge(project, frame, key, placeInBottomRightCorner(rendered, CANVAS_SIZE, badgeSize));
     }
 
     private static boolean hasVisiblePixels(@NotNull BufferedImage img) {

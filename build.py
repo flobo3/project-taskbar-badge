@@ -32,7 +32,7 @@ def main() -> None:
     if not os.path.isdir(lib_dir):
         raise RuntimeError(f"IDE lib directory not found: {lib_dir}")
 
-    version = "1.1.3"
+    version = "1.1.4"
     out_dir = os.path.join(root, "out")
     dist_dir = os.path.join(root, "dist")
     shutil.rmtree(out_dir, ignore_errors=True)
